@@ -1,0 +1,416 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="PiRadio">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#c2410c">
+<title>PiRadio</title>
+<style>
+  :root {
+    --bg: #f4f1ec;
+    --tile: #ffffff;
+    --tile-hover: #ece8e1;
+    --ink: #1f1d1a;
+    --muted: #6d675f;
+    --accent: #c2410c;
+    --accent-ink: #ffffff;
+    --bar: #ffffffee;
+    --border: #d9d3ca;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #151413;
+      --tile: #24211f;
+      --tile-hover: #2f2b28;
+      --ink: #f2eee8;
+      --muted: #a39b91;
+      --accent: #fb923c;
+      --accent-ink: #1a1208;
+      --bar: #1d1b19ee;
+      --border: #3a3631;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    -webkit-tap-highlight-color: transparent;
+  }
+  header {
+    display: flex; align-items: baseline; justify-content: space-between;
+    padding: 16px 16px 4px;
+    padding-top: max(16px, env(safe-area-inset-top));
+  }
+  h1 { font-size: 1.25rem; margin: 0; }
+  #status { font-size: .8rem; color: var(--muted); }
+  #status.bad { color: #b91c1c; }
+
+  main { padding: 12px 16px 150px; }
+  #grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 12px;
+  }
+  .tile {
+    position: relative;
+    display: flex; flex-direction: column; justify-content: flex-end;
+    min-height: 110px;
+    padding: 12px;
+    background: var(--tile);
+    color: var(--ink);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    font: inherit; text-align: left; cursor: pointer;
+    transition: background .15s, transform .08s;
+  }
+  .tile:hover { background: var(--tile-hover); }
+  .tile:active { transform: scale(.97); }
+  .tile:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .tile .name { font-weight: 600; line-height: 1.2; overflow-wrap: anywhere; }
+  .tile .icon {
+    position: absolute; top: 12px; left: 12px;
+    width: 28px; height: 28px; color: var(--muted);
+  }
+  .tile.active { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  .tile.active .icon { color: var(--accent-ink); }
+  .tile.music { border: 2px solid var(--accent); }
+  #next { display: none; }
+  body.music #next { display: grid; }
+
+  /* equaliser bars when playing */
+  .eq { display: none; gap: 3px; align-items: flex-end; height: 24px; }
+  .eq span { width: 5px; background: currentColor; border-radius: 2px; animation: bounce 1s ease-in-out infinite; }
+  .eq span:nth-child(2) { animation-delay: .2s; }
+  .eq span:nth-child(3) { animation-delay: .4s; }
+  @keyframes bounce { 0%,100% { height: 20%; } 50% { height: 100%; } }
+  .tile.playing .eq { display: flex; }
+  .tile.playing .radio, .tile.paused .eq { display: none; }
+  .tile.paused .pauseicon { display: block; }
+  .pauseicon { display: none; }
+
+  /* spinner while waiting for the station to start */
+  .spinner {
+    display: none; position: absolute; top: 12px; left: 12px;
+    width: 24px; height: 24px; margin: 2px;
+    border: 3px solid currentColor; border-right-color: transparent; border-radius: 50%;
+    animation: spin .8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .tile.loading .spinner { display: block; }
+  .tile.loading .radio, .tile.loading .eq, .tile.loading .pauseicon { display: none; }
+  @media (prefers-reduced-motion: reduce) {
+    .eq span { animation: none; height: 60%; }
+    .spinner { animation-duration: 2.5s; }
+  }
+
+  #empty { color: var(--muted); padding: 24px 0; }
+
+  /* bottom controls */
+  footer {
+    position: fixed; left: 0; right: 0; bottom: 0;
+    background: var(--bar);
+    backdrop-filter: blur(10px);
+    border-top: 1px solid var(--border);
+    padding: 10px 16px;
+    padding-bottom: max(10px, env(safe-area-inset-bottom));
+  }
+  #now { text-align: center; font-size: .9rem; min-height: 1.3em; margin-bottom: 8px;
+         white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #controls { display: flex; align-items: center; justify-content: center; gap: 16px; max-width: 520px; margin: 0 auto; }
+  .btn {
+    width: 52px; height: 52px; border-radius: 50%;
+    border: 1px solid var(--border); background: var(--tile); color: var(--ink);
+    display: grid; place-items: center; cursor: pointer; padding: 0;
+  }
+  .btn.main { width: 64px; height: 64px; background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  .btn:active { transform: scale(.94); }
+  .btn:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .btn svg { width: 55%; height: 55%; }
+  #vol { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 90px; color: var(--muted); }
+  #vol svg { width: 20px; height: 20px; flex: none; }
+  #vol input { width: 100%; accent-color: var(--accent); }
+  @media (max-width: 420px) { #controls { gap: 10px; } #vol { min-width: 70px; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>PiRadio</h1>
+  <span id="status">Connecting…</span>
+</header>
+<main>
+  <div id="grid" role="list"></div>
+  <p id="empty" hidden>No stations found. Add <code>.m3u</code> playlists on the Pi.</p>
+</main>
+<footer>
+  <div id="now" aria-live="polite">Nothing playing</div>
+  <div id="controls">
+    <button class="btn main" id="playpause" aria-label="Play"></button>
+    <button class="btn" id="stop" aria-label="Stop"></button>
+    <button class="btn" id="next" aria-label="Next track"></button>
+    <label id="vol">
+      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 9v6h4l5 4V5L7 9H3zm13.5 3a4.5 4.5 0 0 0-2.5-4v8a4.5 4.5 0 0 0 2.5-4z"/></svg>
+      <input type="range" id="volume" min="0" max="100" value="50" aria-label="Volume">
+    </label>
+  </div>
+</footer>
+
+<script>
+"use strict";
+
+// ---- Where is Mopidy? -------------------------------------------------
+// Open this page as  index.html?host=piradio.local:6680  to point at a different Pi.
+const params = new URLSearchParams(location.search);
+const HOST = params.get("host") || (location.port === "6680" ? location.host : location.hostname + ":6680");
+const WS_URL = `ws://${HOST}/mopidy/ws`;
+
+// ---- Icons ------------------------------------------------------------
+const ICON = {
+  play:  '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>',
+  pause: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h4v14H6zm8 0h4v14h-4z"/></svg>',
+  stop:  '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h12v12H6z"/></svg>',
+  next:  '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 6l8.5 6L6 18zM16 6h2v12h-2z"/></svg>',
+  shuffle:'<svg class="radio icon" viewBox="0 0 24 24" fill="currentColor"><path d="M10.59 9.17 5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z"/></svg>',
+  radio: '<svg class="radio icon" viewBox="0 0 24 24" fill="currentColor"><path d="M3.2 6.9 20.5 2l.6 2.1L9.6 7H21a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V8a1 1 0 0 1 1.2-1.1zM8 11a4 4 0 1 0 0 8 4 4 0 0 0 0-8zm9 0v2h3v-2zm0 4v2h3v-2z"/></svg>',
+  paused:'<svg class="pauseicon icon" viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h4v14H6zm8 0h4v14h-4z"/></svg>',
+};
+const $ = (id) => document.getElementById(id);
+$("stop").innerHTML = ICON.stop;
+$("next").innerHTML = ICON.next;
+
+// The playlist with this name is the local-music shuffle, not a radio station.
+const MUSIC_NAME = "Shuffle My Music";
+
+// ---- State ------------------------------------------------------------
+let ws = null, nextId = 1, retry = 0;
+const pending = new Map();
+let stations = [];            // {uri, name, trackUris:[], el}
+let state = "stopped";        // playing | paused | stopped
+let currentTrackUri = null;
+let currentTrack = null;      // track object, used to show artist and title for music
+let activeUri = null;         // playlist uri we started from this page
+let loadingUri = null;        // station we have asked for but cannot hear yet
+let switching = false;        // true while we clear and refill the tracklist
+let watchToken = 0;           // lets a newer click cancel an older wait
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// ---- JSON-RPC over WebSocket -----------------------------------------
+function call(method, params = {}) {
+  return new Promise((resolve, reject) => {
+    if (!ws || ws.readyState !== 1) return reject(new Error("Not connected"));
+    const id = nextId++;
+    pending.set(id, { resolve, reject });
+    ws.send(JSON.stringify({ jsonrpc: "2.0", id, method, params }));
+  });
+}
+
+function setStatus(text, bad = false) {
+  const s = $("status");
+  s.textContent = text;
+  s.className = bad ? "bad" : "";
+}
+
+function connect() {
+  setStatus("Connecting…");
+  ws = new WebSocket(WS_URL);
+  ws.onopen = async () => {
+    retry = 0;
+    setStatus("Connected");
+    try { await init(); } catch (e) { setStatus("Error: " + e.message, true); }
+  };
+  ws.onmessage = (msg) => {
+    const data = JSON.parse(msg.data);
+    if (data.id !== undefined && pending.has(data.id)) {
+      const p = pending.get(data.id); pending.delete(data.id);
+      data.error ? p.reject(new Error(data.error.message || "RPC error")) : p.resolve(data.result);
+    } else if (data.event) {
+      onEvent(data);
+    }
+  };
+  ws.onclose = () => {
+    for (const p of pending.values()) p.reject(new Error("Disconnected"));
+    pending.clear();
+    setStatus("Disconnected — retrying…", true);
+    setTimeout(connect, Math.min(1000 * 2 ** retry++, 10000));
+  };
+  ws.onerror = () => ws.close();
+}
+
+// ---- Load stations and current state ---------------------------------
+async function init() {
+  const refs = await call("core.playlists.as_list");
+  const lookups = await Promise.all(refs.map((r) => call("core.playlists.lookup", { uri: r.uri })));
+  stations = refs.map((r, i) => ({
+    uri: r.uri,
+    name: r.name,
+    isMusic: r.name === MUSIC_NAME,
+    trackUris: ((lookups[i] && lookups[i].tracks) || []).map((t) => t.uri),
+  }));
+  // Shuffle tile first, then stations alphabetically.
+  stations.sort((a, b) => (b.isMusic - a.isMusic) || a.name.localeCompare(b.name, "en-GB"));
+  renderGrid();
+
+  state = await call("core.playback.get_state");
+  const track = await call("core.playback.get_current_track");
+  currentTrackUri = track ? track.uri : null;
+  currentTrack = track || null;
+  const vol = await call("core.mixer.get_volume");
+  if (vol !== null) $("volume").value = vol;
+  refresh();
+}
+
+// ---- Rendering --------------------------------------------------------
+function renderGrid() {
+  const grid = $("grid");
+  grid.textContent = "";
+  $("empty").hidden = stations.length > 0;
+  for (const s of stations) {
+    const b = document.createElement("button");
+    b.className = s.isMusic ? "tile music" : "tile";
+    b.setAttribute("role", "listitem");
+    b.innerHTML = (s.isMusic ? ICON.shuffle : ICON.radio) + ICON.paused + '<span class="spinner" aria-hidden="true"></span><div class="eq icon" aria-hidden="true"><span></span><span></span><span></span></div>';
+    const name = document.createElement("span");
+    name.className = "name";
+    name.textContent = s.name;
+    b.appendChild(name);
+    b.addEventListener("click", () => onTile(s));
+    s.el = b;
+    grid.appendChild(b);
+  }
+}
+
+function stationIsCurrent(s) {
+  if (activeUri) return s.uri === activeUri;           // started from this page
+  return currentTrackUri !== null && s.trackUris.includes(currentTrackUri);
+}
+
+function trackLabel(t) {
+  const artists = (t.artists || []).map((a) => a.name).join(", ");
+  return artists ? artists + " – " + t.name : (t.name || "Unknown track");
+}
+
+function refresh() {
+  let nowName = "Nothing playing";
+  let musicOn = false;
+  for (const s of stations) {
+    const loading = loadingUri === s.uri;
+    const current = loading || (state !== "stopped" && stationIsCurrent(s));
+    s.el.classList.toggle("active", current);
+    s.el.classList.toggle("loading", loading);
+    s.el.classList.toggle("playing", current && !loading && state === "playing");
+    s.el.classList.toggle("paused", current && !loading && state === "paused");
+    s.el.setAttribute("aria-pressed", current ? "true" : "false");
+    if (current) {
+      if (s.isMusic) musicOn = true;
+      const what = s.isMusic && currentTrack ? trackLabel(currentTrack) : s.name;
+      nowName = loading ? "Starting: " + s.name + "…"
+        : (state === "paused" ? "Paused: " : "Playing: ") + what;
+    }
+  }
+  document.body.classList.toggle("music", musicOn);
+  $("now").textContent = nowName;
+  const pp = $("playpause");
+  pp.innerHTML = state === "playing" ? ICON.pause : ICON.play;
+  pp.setAttribute("aria-label", state === "playing" ? "Pause" : "Play");
+}
+
+// ---- Events from Mopidy ----------------------------------------------
+function onEvent(e) {
+  switch (e.event) {
+    case "playback_state_changed":
+      state = e.new_state;
+      // Clearing the tracklist makes Mopidy stop briefly; ignore that while switching.
+      if (state === "stopped" && !switching) {
+        activeUri = null; currentTrackUri = null; currentTrack = null; loadingUri = null; watchToken++;
+      }
+      if (state === "paused") loadingUri = null;
+      break;
+    case "track_playback_started":
+      currentTrack = e.tl_track && e.tl_track.track ? e.tl_track.track : null;
+      currentTrackUri = currentTrack ? currentTrack.uri : null;
+      state = "playing";
+      break;
+    case "volume_changed":
+      $("volume").value = e.volume;
+      return;
+    default:
+      return;
+  }
+  refresh();
+}
+
+// ---- User actions -----------------------------------------------------
+async function onTile(s) {
+  try {
+    if (stationIsCurrent(s) && state === "playing") { await call("core.playback.pause"); return; }
+    if (stationIsCurrent(s) && state === "paused")  { await call("core.playback.resume"); return; }
+    if (!s.trackUris.length) { setStatus("That playlist is empty", true); return; }
+    // Show the tile as "starting" straight away, before the Pi answers.
+    activeUri = s.uri;
+    loadingUri = s.uri;
+    switching = true;
+    refresh();
+    try {
+      await call("core.tracklist.clear");
+      await call("core.tracklist.add", { uris: s.trackUris });
+      // Music shuffles and keeps going; a radio station plays straight through.
+      await call("core.tracklist.set_random", { value: !!s.isMusic });
+      await call("core.tracklist.set_repeat", { value: !!s.isMusic });
+      await call("core.playback.play");
+    } finally {
+      switching = false;
+    }
+    watchForAudio(s.uri);
+  } catch (e) {
+    loadingUri = null;
+    setStatus("Error: " + e.message, true);
+    refresh();
+  }
+}
+
+// Mopidy says "playing" the moment play is requested. Sound is only really flowing
+// once the playback position starts to move, so poll for that.
+async function watchForAudio(uri) {
+  const token = ++watchToken;
+  const giveUp = Date.now() + 30000;
+  while (token === watchToken && loadingUri === uri && Date.now() < giveUp) {
+    await sleep(500);
+    if (token !== watchToken) return;
+    try {
+      const pos = await call("core.playback.get_time_position");
+      if (state === "playing" && pos > 0) break;
+    } catch (e) { return; }
+  }
+  if (token === watchToken && loadingUri === uri) {
+    loadingUri = null;
+    refresh();
+  }
+}
+
+$("playpause").addEventListener("click", async () => {
+  try {
+    if (state === "playing") await call("core.playback.pause");
+    else if (state === "paused") await call("core.playback.resume");
+    else await call("core.playback.play");
+  } catch (e) { setStatus("Error: " + e.message, true); }
+});
+$("stop").addEventListener("click", () => call("core.playback.stop").catch((e) => setStatus("Error: " + e.message, true)));
+$("next").addEventListener("click", () => call("core.playback.next").catch((e) => setStatus("Error: " + e.message, true)));
+
+let volTimer = null;
+$("volume").addEventListener("input", (ev) => {
+  clearTimeout(volTimer);
+  const v = Number(ev.target.value);
+  volTimer = setTimeout(() => call("core.mixer.set_volume", { volume: v }).catch(() => {}), 80);
+});
+
+connect();
+</script>
+</body>
+</html>
